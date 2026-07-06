@@ -2,6 +2,12 @@ const { db } = require("../config/firebaseAdmin");
 const chapa = require("../services/chapa");
 const { FieldValue } = require("firebase-admin/firestore");
 
+/*
+|--------------------------------------------------------------------------
+| APPROVE PAYOUT
+|--------------------------------------------------------------------------
+*/
+
 async function approvePayout(req, res) {
     try {
         const { payoutId } = req.body;
@@ -28,48 +34,223 @@ async function approvePayout(req, res) {
         if (payout.status !== "pending") {
             return res.status(400).json({
                 success: false,
-                message: "Not pending"
+                message: "This payout has already been processed."
             });
         }
 
-        // mark processing FIRST
+        // Create unique reference
+        const reference = `CHEER_${payoutId}_${Date.now()}`;
+
+        // Mark processing
         await payoutRef.update({
             status: "processing",
-            reference: "CHEER_" + payoutId
-        });
-
-        const result = await chapa.transfer({
-            ...payout,
-            id: payoutId
-        });
-
-        if (!result.success) {
-            await payoutRef.update({
-                status: "failed",
-                failureReason: result.error
-            });
-
-            return res.status(500).json(result);
-        }
-
-        await payoutRef.update({
-            status: "sent",
-            transferReference: result.reference,
+            reference,
             approvedAt: FieldValue.serverTimestamp()
         });
 
-        res.json({
+        // Send to Chapa
+        const transfer = await chapa.transfer({
+            ...payout,
+            id: payoutId,
+            reference
+        });
+
+        if (!transfer.success) {
+
+            await payoutRef.update({
+                status: "failed",
+                failureReason:
+                    typeof transfer.error === "string"
+                        ? transfer.error
+                        : JSON.stringify(transfer.error)
+            });
+
+            return res.status(500).json({
+                success: false,
+                message: "Transfer failed",
+                error: transfer.error
+            });
+        }
+
+        // Waiting for webhook confirmation
+        await payoutRef.update({
+            status: "sent",
+            transferReference: transfer.transferId || null
+        });
+
+        return res.json({
             success: true,
-            reference: result.reference
+            message: "Transfer submitted successfully.",
+            reference
         });
 
     } catch (err) {
+
         console.log(err);
-        res.status(500).json({
+
+        return res.status(500).json({
             success: false,
             error: err.message
         });
+
     }
 }
 
-module.exports = { approvePayout };
+/*
+|--------------------------------------------------------------------------
+| REJECT PAYOUT
+|--------------------------------------------------------------------------
+*/
+
+async function rejectPayout(req, res) {
+
+    try {
+
+        const {
+            payoutId,
+            reason
+        } = req.body;
+
+        if (!payoutId) {
+
+            return res.status(400).json({
+                success: false,
+                message: "Missing payoutId"
+            });
+
+        }
+
+        const payoutRef =
+            db.collection("payout").doc(payoutId);
+
+        const payoutDoc =
+            await payoutRef.get();
+
+        if (!payoutDoc.exists) {
+
+            return res.status(404).json({
+                success: false,
+                message: "Payout not found"
+            });
+
+        }
+
+        const payout =
+            payoutDoc.data();
+
+        if (payout.status !== "pending") {
+
+            return res.status(400).json({
+                success: false,
+                message: "This payout has already been processed."
+            });
+
+        }
+
+        await payoutRef.update({
+
+            status: "rejected",
+
+            adminComment:
+                reason || "",
+
+            rejectedAt:
+                FieldValue.serverTimestamp()
+
+        });
+
+        return res.json({
+
+            success: true,
+
+            message:
+                "Payout rejected."
+
+        });
+
+    }
+
+    catch (err) {
+
+        console.log(err);
+
+        return res.status(500).json({
+
+            success: false,
+
+            error:
+                err.message
+
+        });
+
+    }
+
+}
+
+/*
+|--------------------------------------------------------------------------
+| GET ALL PAYOUTS
+|--------------------------------------------------------------------------
+*/
+
+async function getPayouts(req, res) {
+
+    try {
+
+        const snapshot =
+            await db
+                .collection("payout")
+                .orderBy("createdAt", "desc")
+                .get();
+
+        const payouts = [];
+
+        snapshot.forEach(doc => {
+
+            payouts.push({
+
+                id: doc.id,
+
+                ...doc.data()
+
+            });
+
+        });
+
+        return res.json({
+
+            success: true,
+
+            total: payouts.length,
+
+            payouts
+
+        });
+
+    }
+
+    catch (err) {
+
+        console.log(err);
+
+        return res.status(500).json({
+
+            success: false,
+
+            error: err.message
+
+        });
+
+    }
+
+}
+
+module.exports = {
+
+    approvePayout,
+
+    rejectPayout,
+
+    getPayouts
+
+};

@@ -5,6 +5,7 @@ const cors = require("cors");
 
 const payoutRoutes = require("./routes/payout");
 const webhookRoutes = require("./routes/webhook");
+const bankRoutes = require("./routes/banks");
 
 const app = express();
 
@@ -21,9 +22,10 @@ app.get("/", (req, res) => {
 
 app.use("/admin", payoutRoutes);
 app.use("/webhook", webhookRoutes);
+app.use("/banks", bankRoutes);
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
 });
