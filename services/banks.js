@@ -11,7 +11,6 @@ let bankCache = null;
 */
 
 async function getBanks() {
-
     try {
 
         if (bankCache) {
@@ -28,29 +27,35 @@ async function getBanks() {
             }
         );
 
+        console.log("========== CHAPA BANK RESPONSE ==========");
+        console.log(JSON.stringify(response.data, null, 2));
+        console.log("=========================================");
+
         bankCache = response.data.data || [];
 
-        console.log(`Loaded ${bankCache.length} banks from Chapa.`);
+        console.log(`Loaded ${bankCache.length} banks.`);
 
         return bankCache;
 
-    }
+    } catch (err) {
 
-    catch (err) {
+        console.log("========== CHAPA BANK ERROR ==========");
 
-        console.log("Failed to load banks");
+        if (err.response) {
+            console.log(err.response.data);
+        } else {
+            console.log(err.message);
+        }
 
-        console.log(err.response?.data || err.message);
+        console.log("======================================");
 
         return [];
-
     }
-
 }
 
 /*
 |--------------------------------------------------------------------------
-| Find bank by name
+| Find Bank
 |--------------------------------------------------------------------------
 */
 
@@ -58,22 +63,74 @@ async function findBank(bankName) {
 
     const banks = await getBanks();
 
-    const bank = banks.find(b =>
-        b.name
-            ?.toLowerCase()
-            .trim() ===
-        bankName
-            ?.toLowerCase()
-            .trim()
+    if (!bankName) {
+        return null;
+    }
+
+    const search = bankName.toLowerCase().trim();
+
+    // Exact match
+    let bank = banks.find(
+        b =>
+            b.name &&
+            b.name.toLowerCase().trim() === search
     );
 
-    return bank || null;
+    if (bank) return bank;
 
+    // Partial match
+    bank = banks.find(
+        b =>
+            b.name &&
+            (
+                b.name.toLowerCase().includes(search) ||
+                search.includes(b.name.toLowerCase())
+            )
+    );
+
+    if (bank) return bank;
+
+    // Common aliases
+    const aliases = {
+        "cbe": "Commercial Bank of Ethiopia (CBE)",
+        "commercial bank of ethiopia": "Commercial Bank of Ethiopia (CBE)",
+
+        "boa": "Bank of Abyssinia",
+
+        "awash": "Awash Bank",
+
+        "dashen": "Dashen Bank",
+
+        "telebirr": "telebirr",
+
+        "hibret": "Hibret Bank",
+
+        "abay": "Abay Bank",
+
+        "coop": "Cooperative Bank of Oromia",
+
+        "oromia": "Oromia Bank"
+    };
+
+    if (aliases[search]) {
+
+        bank = banks.find(
+            b =>
+                b.name &&
+                b.name.toLowerCase() === aliases[search].toLowerCase()
+        );
+
+        if (bank) {
+            return bank;
+        }
+    }
+
+    return null;
 }
 
 /*
 |--------------------------------------------------------------------------
-| Get only bank code
+| Get Bank Code
 |--------------------------------------------------------------------------
 */
 
@@ -82,19 +139,21 @@ async function getBankCode(bankName) {
     const bank = await findBank(bankName);
 
     if (!bank) {
+
+        console.log(`Bank "${bankName}" not found.`);
+
         return null;
     }
 
-    return bank.id || bank.code || bank.bank_code;
+    console.log(`Matched bank: ${bank.name}`);
 
+    console.log(`Bank code: ${bank.id}`);
+
+    return bank.id;
 }
 
 module.exports = {
-
     getBanks,
-
     findBank,
-
     getBankCode
-
 };
