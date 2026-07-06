@@ -1,4 +1,5 @@
-const admin = require("firebase-admin");
+const { initializeApp, cert, getApps } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
 
 const serviceAccount = {
     type: process.env.FIREBASE_TYPE,
@@ -13,15 +14,14 @@ const serviceAccount = {
     client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
 };
 
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+if (getApps().length === 0) {
+    initializeApp({
+        credential: cert(serviceAccount)
     });
 }
 
-const db = admin.firestore();
+const db = getFirestore();
 
 module.exports = {
-    admin,
     db
 };
