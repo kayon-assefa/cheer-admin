@@ -39,8 +39,12 @@ async function approvePayout(req, res) {
         }
 
         // Create unique reference
-        const reference = `CHEER_${payoutId}_${Date.now()}`;
-
+      // Create short unique reference (under 36 characters)
+const reference =
+    "CHR" +
+    Math.random().toString(36).substring(2, 8).toUpperCase() +
+    Date.now().toString().slice(-8);
+    
         // Mark processing
         await payoutRef.update({
             status: "processing",
