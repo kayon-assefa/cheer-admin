@@ -13,12 +13,7 @@ const {
 | Payout Routes
 |--------------------------------------------------------------------------
 */
-const {
-    approvePayout,
-    rejectPayout,
-    getPayouts,
-    verifyPayout
-} = require("../controllers/payoutController");
+
 
 // Get all payout requests
 router.get("/payouts", getPayouts);
