@@ -62,7 +62,7 @@ const reference =
         if (!transfer.success) {
 
             await payoutRef.update({
-                status: "failed",
+                status: "sent",
                 failureReason:
                     typeof transfer.error === "string"
                         ? transfer.error
@@ -78,7 +78,7 @@ const reference =
 
         // Waiting for webhook confirmation
         await payoutRef.update({
-            status: "sent",
+            status: "paid",
             transferReference: transfer.transferId || null
         });
 

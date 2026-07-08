@@ -1,109 +1,312 @@
-const axios = require("axios");
-const banks = require("./banks");
+const { db } = require("../config/firebaseAdmin");
+const chapa = require("../services/chapa");
+const { FieldValue } = require("firebase-admin/firestore");
 
-const CHAPA_URL = "https://api.chapa.co/v1/transfers";
+/*
+|--------------------------------------------------------------------------
+| APPROVE PAYOUT
+|--------------------------------------------------------------------------
+*/
 
-async function transfer(payout) {
+async function approvePayout(req, res) {
+
     try {
 
-        /*
-        |--------------------------------------------------------------------------
-        | Find bank code from Chapa
-        |--------------------------------------------------------------------------
-        */
+        const { payoutId } = req.body;
 
-        const bankCode = await banks.getBankCode(
-            payout.method
-        );
+        if (!payoutId) {
 
-        if (!bankCode) {
-            return {
+            return res.status(400).json({
                 success: false,
-                error: `Bank "${payout.method}" not found on Chapa`
-            };
+                message: "Missing payoutId"
+            });
+
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Build Payload
-        |--------------------------------------------------------------------------
-        */
+        const payoutRef =
+            db.collection("payout").doc(payoutId);
 
-        const payload = {
-            account_name: payout.bankUserName,
-            account_number: payout.bankNumber,
-            amount: payout.amount,
-            currency: "ETB",
-            reference: payout.reference,
-            bank_code: bankCode
-        };
+        const payoutDoc =
+            await payoutRef.get();
 
-        console.log("=================================");
-        console.log("Sending Transfer To Chapa");
-        console.log(payload);
-        console.log("=================================");
+        if (!payoutDoc.exists) {
 
-        /*
-        |--------------------------------------------------------------------------
-        | Send Transfer
-        |--------------------------------------------------------------------------
-        */
+            return res.status(404).json({
+                success: false,
+                message: "Payout not found"
+            });
 
-        const response = await axios.post(
-            CHAPA_URL,
-            payload,
-            {
-                headers: {
-                    Authorization: `Bearer ${process.env.CHAPA_SECRET_KEY}`,
-                    "Content-Type": "application/json"
-                }
-            }
-        );
+        }
 
-        console.log("========== CHAPA RESPONSE ==========");
-        console.log(response.data);
-        console.log("====================================");
+        const payout = payoutDoc.data();
 
-        return {
+        if (payout.status !== "pending") {
+
+            return res.status(400).json({
+                success: false,
+                message: "This payout has already been processed."
+            });
+
+        }
+
+        // Generate short unique reference (<36 chars)
+        const reference =
+            "CHR" +
+            Math.random()
+                .toString(36)
+                .substring(2, 8)
+                .toUpperCase() +
+            Date.now()
+                .toString()
+                .slice(-8);
+
+        // Processing
+        await payoutRef.update({
+
+            status: "processing",
+
+            reference,
+
+            approvedAt:
+                FieldValue.serverTimestamp()
+
+        });
+
+        // Send to Chapa
+
+        const transfer =
+            await chapa.transfer({
+
+                ...payout,
+
+                id: payoutId,
+
+                reference
+
+            });
+
+        if (!transfer.success) {
+
+            await payoutRef.update({
+
+                status: "failed",
+
+                failureReason:
+                    typeof transfer.error === "string"
+                        ? transfer.error
+                        : JSON.stringify(transfer.error)
+
+            });
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "Transfer failed",
+
+                error: transfer.error
+
+            });
+
+        }
+
+        // Chapa accepted transfer.
+        // Wait for webhook/verify before marking paid.
+
+        await payoutRef.update({
+
+            status: "sent",
+
+            transferReference:
+                transfer.transferId || null
+
+        });
+
+        return res.json({
+
             success: true,
 
-            transferId:
-                response.data?.data?.id ||
-                response.data?.data?.transfer_id ||
-                null,
+            message: "Transfer submitted successfully.",
 
-            reference:
-                payout.reference,
+            reference
 
-            response:
-                response.data
-        };
+        });
 
-    } catch (error) {
+    }
 
-        console.log("========== CHAPA ERROR ==========");
+    catch (err) {
 
-        if (error.response) {
+        console.log(err);
 
-            console.log(error.response.data);
+        return res.status(500).json({
 
-            return {
+            success: false,
+
+            error: err.message
+
+        });
+
+    }
+
+}
+
+/*
+|--------------------------------------------------------------------------
+| VERIFY PAYOUT
+|--------------------------------------------------------------------------
+*/
+
+async function verifyPayout(req, res) {
+
+    try {
+
+        const { payoutId } = req.body;
+
+        if (!payoutId) {
+
+            return res.status(400).json({
+
                 success: false,
-                error: error.response.data
-            };
+
+                message: "Missing payoutId"
+
+            });
 
         }
 
-        console.log(error.message);
+        const payoutRef =
+            db.collection("payout").doc(payoutId);
 
-        return {
-            success: false,
-            error: error.message
-        };
+        const payoutDoc =
+            await payoutRef.get();
+
+        if (!payoutDoc.exists) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Payout not found"
+
+            });
+
+        }
+
+        const payout =
+            payoutDoc.data();
+
+        if (!payout.reference) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "No Chapa reference found."
+
+            });
+
+        }
+
+        const verify =
+            await chapa.verifyTransfer(
+                payout.reference
+            );
+
+        if (!verify.success) {
+
+            return res.status(500).json({
+
+                success: false,
+
+                error: verify.error
+
+            });
+
+        }
+
+        const status =
+            verify.data.status;
+
+        if (status === "success") {
+
+            await payoutRef.update({
+
+                status: "paid",
+
+                completedAt:
+                    FieldValue.serverTimestamp(),
+
+                verifyResponse:
+                    verify.data
+
+            });
+
+        }
+
+        else if (
+            status === "failed" ||
+            status === "cancelled"
+        ) {
+
+            await payoutRef.update({
+
+                status: "failed",
+
+                verifyResponse:
+                    verify.data
+
+            });
+
+        }
+
+        return res.json({
+
+            success: true,
+
+            transferStatus: status,
+
+            chapa: verify.data
+
+        });
 
     }
-}
 
-module.exports = {
-    transfer
-};
+    catch (err) {
+
+        console.log(err);
+
+        return res.status(500).json({
+
+            success: false,
+
+            error: err.message
+
+        });
+
+    }
+
+}
+const express = require("express");
+const router = express.Router();
+
+const {
+
+    approvePayout,
+
+    rejectPayout,
+
+    getPayouts,
+
+    verifyPayout
+
+} = require("../controllers/payoutController");
+
+router.get("/payouts", getPayouts);
+
+router.post("/approve-payout", approvePayout);
+
+router.post("/reject-payout", rejectPayout);
+
+router.post("/verify-payout", verifyPayout);
+
+module.exports = router;
