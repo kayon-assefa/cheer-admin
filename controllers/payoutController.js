@@ -100,11 +100,66 @@ const reference =
     }
 }
 
+
 /*
 |--------------------------------------------------------------------------
 | REJECT PAYOUT
 |--------------------------------------------------------------------------
 */
+
+async function rejectPayout(req, res) {
+    try {
+
+        const { payoutId, reason } = req.body;
+
+        if (!payoutId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing payoutId"
+            });
+        }
+
+        const payoutRef = db.collection("payout").doc(payoutId);
+        const payoutDoc = await payoutRef.get();
+
+        if (!payoutDoc.exists) {
+            return res.status(404).json({
+                success: false,
+                message: "Payout not found"
+            });
+        }
+
+        const payout = payoutDoc.data();
+
+        if (payout.status !== "pending") {
+            return res.status(400).json({
+                success: false,
+                message: "This payout has already been processed."
+            });
+        }
+
+        await payoutRef.update({
+            status: "rejected",
+            adminComment: reason || "",
+            rejectedAt: FieldValue.serverTimestamp()
+        });
+
+        return res.json({
+            success: true,
+            message: "Payout rejected."
+        });
+
+    } catch (err) {
+
+        console.log(err);
+
+        return res.status(500).json({
+            success: false,
+            error: err.message
+        });
+
+    }
+}
 
 async function verifyPayout(req, res) {
     try {
