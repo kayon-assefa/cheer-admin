@@ -61,13 +61,13 @@ const reference =
 
         if (!transfer.success) {
 
-            await payoutRef.update({
-                status: "sent",
-                failureReason:
-                    typeof transfer.error === "string"
-                        ? transfer.error
-                        : JSON.stringify(transfer.error)
-            });
+           await payoutRef.update({
+    status: "failed",
+    failureReason:
+        typeof transfer.error === "string"
+            ? transfer.error
+            : JSON.stringify(transfer.error)
+});
 
             return res.status(500).json({
                 success: false,
@@ -77,10 +77,10 @@ const reference =
         }
 
         // Waiting for webhook confirmation
-        await payoutRef.update({
-            status: "paid",
-            transferReference: transfer.transferId || null
-        });
+      await payoutRef.update({
+    status: "sent",
+    transferReference: transfer.transferId || null
+});
 
         return res.json({
             success: true,
@@ -106,89 +106,86 @@ const reference =
 |--------------------------------------------------------------------------
 */
 
-async function rejectPayout(req, res) {
-
+async function verifyPayout(req, res) {
     try {
 
-        const {
-            payoutId,
-            reason
-        } = req.body;
+        const { payoutId } = req.body;
 
         if (!payoutId) {
-
             return res.status(400).json({
                 success: false,
                 message: "Missing payoutId"
             });
-
         }
 
-        const payoutRef =
-            db.collection("payout").doc(payoutId);
-
-        const payoutDoc =
-            await payoutRef.get();
+        const payoutRef = db.collection("payout").doc(payoutId);
+        const payoutDoc = await payoutRef.get();
 
         if (!payoutDoc.exists) {
-
             return res.status(404).json({
                 success: false,
                 message: "Payout not found"
             });
-
         }
 
-        const payout =
-            payoutDoc.data();
+        const payout = payoutDoc.data();
 
-        if (payout.status !== "pending") {
-
+        if (!payout.reference) {
             return res.status(400).json({
                 success: false,
-                message: "This payout has already been processed."
+                message: "No Chapa reference found."
+            });
+        }
+
+        const verify = await chapa.verifyTransfer(
+            payout.reference
+        );
+
+        if (!verify.success) {
+            return res.status(500).json({
+                success: false,
+                error: verify.error
+            });
+        }
+
+        const status = verify.data.status;
+
+        if (status === "success") {
+
+            await payoutRef.update({
+                status: "paid",
+                completedAt: FieldValue.serverTimestamp(),
+                verifyResponse: verify.data
+            });
+
+        } else if (
+            status === "failed" ||
+            status === "cancelled"
+        ) {
+
+            await payoutRef.update({
+                status: "failed",
+                verifyResponse: verify.data
             });
 
         }
 
-        await payoutRef.update({
-
-            status: "rejected",
-
-            adminComment:
-                reason || "",
-
-            rejectedAt:
-                FieldValue.serverTimestamp()
-
-        });
-
         return res.json({
-
             success: true,
-
-            message:
-                "Payout rejected."
-
+            transferStatus: status,
+            chapa: verify.data
         });
 
-    }
-
-    catch (err) {
+    } catch (err) {
 
         console.log(err);
 
         return res.status(500).json({
-
             success: false,
-
-            error:
-                err.message
-
+            error: err.message
         });
 
     }
-
 }
 
 /*
@@ -248,13 +245,9 @@ async function getPayouts(req, res) {
     }
 
 }
-
 module.exports = {
-
     approvePayout,
-
     rejectPayout,
-
-    getPayouts
-
+    getPayouts,
+    verifyPayout
 };

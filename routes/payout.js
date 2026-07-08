@@ -4,7 +4,8 @@ const router = express.Router();
 const {
     approvePayout,
     rejectPayout,
-    getPayouts
+    getPayouts,
+    verifyPayout
 } = require("../controllers/payoutController");
 
 /*
@@ -16,10 +17,13 @@ const {
 // Get all payout requests
 router.get("/payouts", getPayouts);
 
-// Approve a payout
+// Approve payout
 router.post("/approve-payout", approvePayout);
 
-// Reject a payout
+// Reject payout
 router.post("/reject-payout", rejectPayout);
+
+// Verify payout with Chapa
+router.post("/verify-payout", verifyPayout);
 
 module.exports = router;
