@@ -67,7 +67,9 @@ async function verifyTransfer(reference) {
                 }
             }
         );
-
+console.log("========== VERIFY RESPONSE ==========");
+console.log(JSON.stringify(response.data, null, 2));
+console.log("=====================================");
         return {
             success: true,
             data: response.data.data
