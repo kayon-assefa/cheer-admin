@@ -192,10 +192,11 @@ async function verifyPayout(req, res) {
             });
         }
 
-        const verify = await chapa.verifyTransfer(
-            payout.reference
-        );
+       const verify = await chapa.verifyTransfer(payout.reference);
 
+console.log("========== VERIFY OBJECT ==========");
+console.log(JSON.stringify(verify, null, 2));
+console.log("===================================");
         if (!verify.success) {
             return res.status(500).json({
                 success: false,
