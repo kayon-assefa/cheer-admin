@@ -205,7 +205,7 @@ console.log("===================================");
             });
         }
 
-        const status = verify.data.status;
+        const status = verify.status;
 
         if (status === "success") {
 
@@ -280,11 +280,11 @@ console.log("===================================");
 
         }
 
-        return res.json({
-            success: true,
-            transferStatus: status,
-            chapa: verify.data
-        });
+       return res.json({
+  success: true,
+  transferStatus: status,
+  chapa: verify.raw || verify.data
+});
 
     } catch (err) {
 

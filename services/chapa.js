@@ -70,10 +70,12 @@ async function verifyTransfer(reference) {
 console.log("========== VERIFY RESPONSE ==========");
 console.log(JSON.stringify(response.data, null, 2));
 console.log("=====================================");
-        return {
-            success: true,
-            data: response.data.data
-        };
+       return {
+  success: true,
+  status: response.data.status,
+  data: response.data.data,
+  raw: response.data
+};
 
     } catch (err) {
 
