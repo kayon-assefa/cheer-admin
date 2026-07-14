@@ -297,7 +297,92 @@ console.log("===================================");
 
     }
 }
+ /*
+|--------------------------------------------------------------------------
+| MANUALLY MARK PAYOUT AS PAID + DEDUCT BALANCE
+|--------------------------------------------------------------------------
+*/
 
+async function markPayoutPaid(req, res) {
+    try {
+        const { payoutId } = req.body;
+
+        if (!payoutId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing payoutId"
+            });
+        }
+
+        const payoutRef = db.collection("payout").doc(payoutId);
+
+        await db.runTransaction(async (transaction) => {
+            const payoutDoc = await transaction.get(payoutRef);
+
+            if (!payoutDoc.exists) {
+                throw new Error("Payout not found");
+            }
+
+            const payout = payoutDoc.data();
+
+            // Prevent deducting twice
+            if (payout.balanceDeducted === true) {
+                return;
+            }
+
+            const uid = payout.uid;
+            const amount = Number(payout.amount || 0);
+
+            if (!uid || amount <= 0) {
+                throw new Error("Invalid payout data");
+            }
+
+            const userRef = db.collection("users").doc(uid);
+            const userDoc = await transaction.get(userRef);
+
+            if (!userDoc.exists) {
+                throw new Error("User not found");
+            }
+
+            const currentBalance = Number(
+                userDoc.data().balance ??
+                userDoc.data().currentBalance ??
+                0
+            );
+
+            if (currentBalance < amount) {
+                throw new Error("Insufficient balance");
+            }
+
+            const newBalance = currentBalance - amount;
+
+            transaction.update(userRef, {
+                balance: newBalance,
+                currentBalance: newBalance
+            });
+
+            transaction.update(payoutRef, {
+                status: "paid",
+                balanceDeducted: true,
+                deductedAmount: amount,
+                completedAt: FieldValue.serverTimestamp()
+            });
+        });
+
+        return res.json({
+            success: true,
+            message: "Payout marked as paid and balance deducted"
+        });
+
+    } catch (err) {
+        console.error(err);
+
+        return res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+}
 /*
 |--------------------------------------------------------------------------
 | GET ALL PAYOUTS
@@ -359,5 +444,6 @@ module.exports = {
     approvePayout,
     rejectPayout,
     getPayouts,
-    verifyPayout
+    verifyPayout,
+    markPayoutPaid
 };
