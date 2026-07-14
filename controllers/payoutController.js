@@ -183,6 +183,7 @@ async function verifyPayout(req, res) {
             });
         }
 
+        
         const payout = payoutDoc.data();
 
         if (!payout.reference) {
@@ -208,13 +209,66 @@ console.log("===================================");
 
         if (status === "success") {
 
-            await payoutRef.update({
-                status: "paid",
-                completedAt: FieldValue.serverTimestamp(),
-                verifyResponse: verify.data
-            });
+    await db.runTransaction(async (transaction) => {
 
-        } else if (
+        const freshPayoutDoc = await transaction.get(payoutRef);
+
+        if (!freshPayoutDoc.exists) {
+            throw new Error("Payout not found");
+        }
+
+        const freshPayout = freshPayoutDoc.data();
+
+        // Prevent double deduction
+        if (freshPayout.balanceDeducted === true) {
+            return;
+        }
+
+        const uid = freshPayout.uid;
+        const payoutAmount = Number(freshPayout.amount || 0);
+
+        if (!uid || payoutAmount <= 0) {
+            throw new Error("Invalid payout data");
+        }
+
+        const userRef = db.collection("users").doc(uid);
+        const userDoc = await transaction.get(userRef);
+
+        if (!userDoc.exists) {
+            throw new Error("User not found");
+        }
+
+        const currentBalance = Number(
+            userDoc.data().balance ??
+            userDoc.data().currentBalance ??
+            0
+        );
+
+        if (currentBalance < payoutAmount) {
+            throw new Error("Insufficient balance");
+        }
+
+        const newBalance = currentBalance - payoutAmount;
+
+        // Deduct money from creator
+        transaction.update(userRef, {
+            balance: newBalance,
+            currentBalance: newBalance
+        });
+
+        // Mark payout paid
+        transaction.update(payoutRef, {
+            status: "paid",
+            balanceDeducted: true,
+            deductedAmount: payoutAmount,
+            completedAt: FieldValue.serverTimestamp(),
+            verifyResponse: verify.data
+        });
+    });
+
+}
+
+      else if (
             status === "failed" ||
             status === "cancelled"
         ) {
