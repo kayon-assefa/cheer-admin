@@ -5,7 +5,8 @@ const {
     approvePayout,
     rejectPayout,
     getPayouts,
-    verifyPayout
+    verifyPayout,
+    markPayoutPaid
 } = require("../controllers/payoutController");
 
 /*
@@ -13,7 +14,6 @@ const {
 | Payout Routes
 |--------------------------------------------------------------------------
 */
-
 
 // Get all payout requests
 router.get("/payouts", getPayouts);
@@ -27,5 +27,7 @@ router.post("/reject-payout", rejectPayout);
 // Verify payout with Chapa
 router.post("/verify-payout", verifyPayout);
 
+// Manually mark paid + deduct creator balance
+router.post("/mark-payout-paid", markPayoutPaid);
 
-module.exports = router; 
+module.exports = router;
